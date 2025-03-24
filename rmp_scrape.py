@@ -2,13 +2,16 @@ import requests
 from bs4 import BeautifulSoup
 from app import create_app, db
 from app.models import Professor, CourseProfessor
-school_id = "4195"
+school_id = "4159"
 BASE_SEARCH_URL = f"https://www.ratemyprofessors.com/search/professors/{school_id}?q="
 BASE_PROFILE_URL = "https://www.ratemyprofessors.com"
 
 def search_professor(professor_name):
     url = f"{BASE_SEARCH_URL}{professor_name}"
-    response = requests.get(url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    }
+    response = requests.get(url, headers=headers)
     if response.status_code != 200:
         print(f"Failed to fetch data for {professor_name}")
         return None
@@ -75,7 +78,10 @@ def search_professor(professor_name):
 
 def scrape_professor_profile(profile_url):
     """Scrape the professor's profile to get reviews and ratings."""
-    response = requests.get(profile_url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    }
+    response = requests.get(profile_url, headers=headers)
     if response.status_code != 200:
         print(f"Failed to access profile: {profile_url}")
         return []
@@ -110,7 +116,6 @@ def process_professor_reviews():
     """Fetch reviews for all professors and update the database."""
     app = create_app()
     
-    
     with app.app_context():
         professors = Professor.query.all()
         try:
@@ -126,6 +131,9 @@ def process_professor_reviews():
                         continue
 
                     course_reviews = {}
+                    total_rating = 0
+                    total_reviews = 0
+
                     for review in reviews:
                         course_code = review["course_code"]
                         if course_code not in course_reviews:
@@ -137,6 +145,9 @@ def process_professor_reviews():
                         course_reviews[course_code]["total_rating"] += review["rating"]
                         course_reviews[course_code]["count"] += 1
                         course_reviews[course_code]["reviews"].append(review["review"])
+
+                        total_rating += review["rating"]
+                        total_reviews += 1
 
                     for course_code, data in course_reviews.items():
                         avg_rating = data["total_rating"] / data["count"]
@@ -152,6 +163,13 @@ def process_professor_reviews():
                             course_prof.reviews = reviews_list
                             db.session.commit() 
                             print(f"Updated {course_code} for {professor.name}: Avg {avg_rating}, {len(reviews_list)} reviews")
+
+                    # Update the professor's average rating and total reviews
+                    if total_reviews > 0:
+                        professor.average_rating = total_rating / total_reviews
+                        professor.total_reviews = total_reviews
+                        db.session.commit()
+                        print(f"Updated {professor.name}: Avg {professor.average_rating}, {professor.total_reviews} reviews")
         except Exception as e:
             print(f"Exception occurred: {e}")
             db.session.rollback()  
